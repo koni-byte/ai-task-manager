@@ -2,22 +2,25 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
-// 環境変数の読み込み
+// 1. 新しく作成したタスク用ルーターをインポート
+import taskRoutes from './routes/tasks';
+
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ミドルウェアの設定
-app.use(cors()); // フロントエンドからのアクセスを許可
-app.use(express.json()); // JSON形式のリクエストボディをパース
+app.use(cors());
+app.use(express.json());
 
-// テスト用ルート
+// ヘルスチェック用ルート
 app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ message: 'サーバーは正常に稼働しています！' });
 });
 
-// サーバー起動
+// 2. タスク関連のAPIルートを設定 (/api/tasks 以下のリクエストは taskRoutes に任せる)
+app.use('/api/tasks', taskRoutes);
+
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
