@@ -1,0 +1,45 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ユーザーテーブル
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  tasks     Task[]   // UserとTaskの1対多のリレーション
+  messages  Message[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// タスクテーブル
+model Task {
+  id              String   @id @default(uuid())
+  title           String
+  description     String?  // ?は必須ではない（null許容）の意味
+  priority        String   @default("medium") // high, medium, low
+  deadline        DateTime?
+  isAiGenerated   Boolean  @default(false) // 面接アピール用のフラグ
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// AIチャット履歴テーブル
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  role      String   // "user" or "assistant"
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
