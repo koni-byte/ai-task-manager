@@ -6,8 +6,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const router = express.Router();
-
-// Prisma 6 の仕様に合わせて、シンプルに初期化します（自動で .env と schema.prisma を読み込みます）
 const prisma = new PrismaClient();
 
 // ==========================================
@@ -16,8 +14,6 @@ const prisma = new PrismaClient();
 // ==========================================
 router.get('/', async (req: Request, res: Response) => {
   try {
-    // 本当はここで認証情報（userId）を受け取って、そのユーザーのタスクだけを返す必要がありますが、
-    // まずは動作確認のため「全タスク」を取得するシンプルな形にします。
     const tasks = await prisma.task.findMany({
       orderBy: { createdAt: 'desc' }, // 新しい順に並び替え
     });
@@ -34,17 +30,34 @@ router.get('/', async (req: Request, res: Response) => {
 // ==========================================
 router.post('/', async (req: Request, res: Response) => {
   try {
-    // フロントエンドから送られてくるデータ（req.body）を受け取る
-    const { title, description, priority, deadline, isAiGenerated, userId } = req.body;
+    // フロントエンドから送られてくるデータを受け取る
+    const { title, description, priority, deadline, isAiGenerated, userId, userEmail } = req.body;
 
+    // Prisma側のUserテーブルにユーザーが存在するか確認
+    let user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    // 存在しない場合（Supabase Authで登録されたばかりの場合）、Prisma側にもユーザーを作成
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          id: userId,
+          email: userEmail || 'unknown@example.com',
+          password: 'supabase-auth-user', // 認証はSupabaseで行うためダミー
+        }
+      });
+    }
+
+    // タスクの作成処理
     const newTask = await prisma.task.create({
       data: {
         title,
         description,
-        priority: priority || 'medium', // 指定がなければ medium
+        priority: priority || 'medium',
         deadline: deadline ? new Date(deadline) : null,
         isAiGenerated: isAiGenerated || false,
-        userId, // フロントエンドから送られてきたユーザーIDを紐付け
+        userId: user.id, // 確実に存在するユーザーIDを指定
       },
     });
     
@@ -62,7 +75,7 @@ router.post('/', async (req: Request, res: Response) => {
 // ==========================================
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params; // URLからタスクのIDを取得
+    const { id } = req.params;
     const { title, description, priority, deadline, isAiGenerated } = req.body;
 
     const updatedTask = await prisma.task.update({
@@ -89,7 +102,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 // ==========================================
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params; // URLからタスクのIDを取得
+    const { id } = req.params;
 
     await prisma.task.delete({
       where: { id },
