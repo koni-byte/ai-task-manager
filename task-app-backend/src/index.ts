@@ -1,9 +1,10 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-
-// 1. 新しく作成したタスク用ルーターをインポート
+// 新しく作成するタスク用ルーターをインポート
 import taskRoutes from './routes/tasks';
+// AI用ルーターをインポート
+import aiRoutes from './routes/ai';
 
 dotenv.config();
 
@@ -18,8 +19,11 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ message: 'サーバーは正常に稼働しています！' });
 });
 
-// 2. タスク関連のAPIルートを設定 (/api/tasks 以下のリクエストは taskRoutes に任せる)
+// タスク関連のAPIルートを設定 (/api/tasks 以下のリクエストは taskRoutes が処理する)
 app.use('/api/tasks', taskRoutes);
+
+// AI関連のAPIルートを設定 (/api/ai 以下のリクエストは aiRoutes が処理する)
+app.use('/api/ai', aiRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);

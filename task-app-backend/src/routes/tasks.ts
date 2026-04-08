@@ -75,18 +75,24 @@ router.post('/', async (req: Request, res: Response) => {
 // ==========================================
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { title, description, priority, deadline, isAiGenerated } = req.body;
+    // 💡 型エラーを回避するため as string で明示的にキャスト
+    const id = req.params.id as string;
+    
+    // 💡 フロントエンドからの completed (完了状態) も受け取れるように追記
+    const { title, description, priority, deadline, isAiGenerated, completed } = req.body;
+
+    // 送られてきたデータだけを更新するようにオブジェクトを作成
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (priority !== undefined) updateData.priority = priority;
+    if (deadline !== undefined) updateData.deadline = deadline ? new Date(deadline) : null;
+    if (isAiGenerated !== undefined) updateData.isAiGenerated = isAiGenerated;
+    if (completed !== undefined) updateData.completed = completed; // 👈 追記部分
 
     const updatedTask = await prisma.task.update({
       where: { id },
-      data: {
-        title,
-        description,
-        priority,
-        deadline: deadline ? new Date(deadline) : null,
-        isAiGenerated,
-      },
+      data: updateData,
     });
 
     res.status(200).json(updatedTask);
@@ -102,7 +108,8 @@ router.put('/:id', async (req: Request, res: Response) => {
 // ==========================================
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    // 💡 型エラーを回避するため as string で明示的にキャスト
+    const id = req.params.id as string;
 
     await prisma.task.delete({
       where: { id },

@@ -27,7 +27,8 @@ model Task {
   description     String?  // ?は必須ではない（null許容）の意味
   priority        String   @default("medium") // high, medium, low
   deadline        DateTime?
-  isAiGenerated   Boolean  @default(false) // 面接アピール用のフラグ
+  isAiGenerated   Boolean  @default(false) 
+  completed     Boolean   @default(false)
   userId          String
   user            User     @relation(fields: [userId], references: [id])
   createdAt       DateTime @default(now())

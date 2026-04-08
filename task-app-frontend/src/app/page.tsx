@@ -1,245 +1,334 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useRef } from 'react';
+import { CheckCircle2, Circle, Plus, Send, Bot, User, Loader2, Sparkles, Trash2, ListTodo } from 'lucide-react';
 
-// タスクの型定義
-type Task = {
+// ==========================================
+// ⚠️ ローカル環境との通信設定
+// あなたのバックエンドのURLに合わせて変更してください
+// ==========================================
+const API_BASE_URL = 'http://localhost:5000/api';
+
+// 💡 TypeScriptのエラーを解消するための型定義を追加
+interface Task {
   id: string;
   title: string;
-  description: string | null;
-  priority: string;
-  deadline: string | null;
-  isAiGenerated: boolean;
-};
+  completed: boolean;
+}
 
-export default function DashboardPage() {
-  // タスク一覧と画面の状態
+interface Message {
+  role: 'ai' | 'user';
+  content: string;
+}
+
+export default function Page() {
+  // 💡 画面切り替え用のステート ('tasks' または 'chat')
+  const [activeTab, setActiveTab] = useState<'tasks' | 'chat'>('tasks');
+
+  // タスク用のステート (💡 ジェネリクス <Task[]> を追加して型を指定)
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | undefined>();
-  const router = useRouter();
-
-  // 新規タスク作成フォームの状態
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskDescription, setNewTaskDescription] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState('medium');
-  const [isCreating, setIsCreating] = useState(false);
+  const [isFetchingTasks, setIsFetchingTasks] = useState(false);
 
+  // AIチャット用のステート (💡 ジェネリクス <Message[]> を追加して型を指定)
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'ai', content: 'こんにちは！タスクの整理やアイデア出しなど、何でもサポートしますよ！' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null); // 💡 refにも型を追加
+
+  // ------------------------------------------
+  // 📝 タスク関連の処理
+  // ------------------------------------------
   useEffect(() => {
-    // 認証状態の確認とタスク取得
-    const checkAuthAndFetchTasks = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push('/login');
-        return;
-      }
+    fetchTasks();
+  }, []);
 
-      setUserId(session.user.id);
-      setUserEmail(session.user.email);
-      await fetchTasks();
-    };
-
-    checkAuthAndFetchTasks();
-  }, [router]);
-
-  // 【Read】バックエンドAPIからタスクを取得する関数
   const fetchTasks = async () => {
+    setIsFetchingTasks(true);
     try {
-      const response = await fetch('http://localhost:5000/api/tasks');
-      if (!response.ok) throw new Error('タスクの取得に失敗しました');
-      
-      const data = await response.json();
+      const res = await fetch(`${API_BASE_URL}/tasks`);
+      if (!res.ok) throw new Error('APIリクエストに失敗しました');
+      const data = await res.json();
       setTasks(data);
     } catch (error) {
-      console.error(error);
-      alert('タスクの読み込みエラーが発生しました。バックエンドサーバー(ポート5000)は起動していますか？');
+      console.error("タスクの取得に失敗しました:", error);
     } finally {
-      setIsLoading(false);
+      setIsFetchingTasks(false);
     }
   };
 
-  // 【Create】タスクを作成する関数
-  const handleCreateTask = async (e: React.FormEvent) => {
+  const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim() || !userId) return;
+    if (!newTaskTitle.trim()) return;
 
-    setIsCreating(true);
+    const tempId = Date.now().toString(); // PrismaのID(UUID等)に合わせるため一旦文字列化
+    const newTask: Task = { id: tempId, title: newTaskTitle, completed: false };
+    setTasks(prev => [newTask, ...prev]); // 新しいものを上に
+    setNewTaskTitle('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/tasks', {
+      const res = await fetch(`${API_BASE_URL}/tasks`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: newTaskTitle,
-          description: newTaskDescription,
-          priority: newTaskPriority,
-          userId: userId,
-          userEmail: userEmail,
-          isAiGenerated: false,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        // userId等はご自身の環境に合わせて適宜追加してください
+        body: JSON.stringify({ title: newTaskTitle, userId: 'dummy-user-id' }) 
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || `サーバーエラー (ステータスコード: ${response.status})`);
-      }
-
-      const createdTask = await response.json();
-      setTasks([createdTask, ...tasks]);
-      setNewTaskTitle('');
-      setNewTaskDescription('');
-      setNewTaskPriority('medium');
-    } catch (error: any) {
-      console.error(error);
-      alert(`タスクの作成中にエラーが発生しました。\n詳細: ${error.message}`);
-    } finally {
-      setIsCreating(false);
+      if (!res.ok) throw new Error('追加に失敗しました');
+      
+      const addedTask = await res.json();
+      setTasks(prev => prev.map(t => t.id === tempId ? addedTask : t));
+    } catch (error) {
+      console.error("タスクの追加に失敗しました:", error);
+      setTasks(prev => prev.filter(t => t.id !== tempId));
     }
   };
 
-  // 【Delete】タスクを削除する関数
-  const handleDeleteTask = async (id: string) => {
-    // 間違えて消さないように確認ダイアログを出す
-    if (!window.confirm('本当にこのタスクを削除しますか？')) return;
+  const toggleTaskCompletion = async (taskId: string) => {
+    const taskToToggle = tasks.find(t => t.id === taskId);
+    if (!taskToToggle) return;
+
+    setTasks(tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t));
 
     try {
-      // バックエンドのDELETE APIを呼び出す
-      const response = await fetch(`http://localhost:5000/api/tasks/${id}`, {
-        method: 'DELETE',
+      const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !taskToToggle.completed })
       });
-
-      if (!response.ok) {
-        throw new Error('タスクの削除に失敗しました');
-      }
-
-      // 成功したら、画面のタスク一覧（State）からも該当のタスクを取り除く
-      setTasks(tasks.filter((task) => task.id !== id));
-    } catch (error: any) {
-      console.error(error);
-      alert(`削除中にエラーが発生しました。\n詳細: ${error.message}`);
+      if (!res.ok) throw new Error('更新に失敗しました');
+    } catch (error) {
+      console.error("タスクの更新に失敗しました:", error);
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, completed: taskToToggle.completed } : t));
     }
   };
 
-  // ログアウト処理
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+  const deleteTask = async (taskId: string) => {
+    const taskToDelete = tasks.find(t => t.id === taskId);
+    setTasks(tasks.filter(t => t.id !== taskId));
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('削除に失敗しました');
+    } catch (error) {
+      console.error("タスクの削除に失敗しました:", error);
+      if (taskToDelete) {
+        setTasks(prev => [...prev, taskToDelete]);
+      }
+    }
   };
 
-  if (isLoading) {
-    return <div className="flex h-screen items-center justify-center text-gray-500">読み込み中...</div>;
-  }
+  // ------------------------------------------
+  // 🤖 AIチャット関連の処理
+  // ------------------------------------------
+  useEffect(() => {
+    if (activeTab === 'chat' && chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [messages, isAiTyping, activeTab]);
 
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isAiTyping) return;
+
+    const userMsg = chatInput.trim();
+    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setChatInput('');
+    setIsAiTyping(true);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg, currentTasks: tasks })
+      });
+      
+      if (!res.ok) throw new Error('AIとの通信に失敗しました');
+      
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: 'ai', content: data.reply }]);
+    } catch (error) {
+      console.error("AI APIエラー:", error);
+      setMessages(prev => [...prev, { 
+        role: 'ai', 
+        content: 'エラーが発生しました。バックエンドAPIが起動しているか確認してください。' 
+      }]);
+    } finally {
+      setIsAiTyping(false);
+    }
+  };
+
+  // ------------------------------------------
+  // 🎨 UI レンダリング
+  // ------------------------------------------
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">タスクダッシュボード</h1>
-          <button 
-            onClick={handleLogout}
-            className="text-sm bg-white border border-red-200 text-red-600 px-4 py-2 rounded-md hover:bg-red-50 transition-colors"
+    <div className="min-h-screen bg-slate-100 text-slate-800 p-4 md:p-8 font-sans flex flex-col items-center">
+      <div className="w-full max-w-3xl flex flex-col h-[90vh]">
+        
+        {/* 💡 画面上部のタブナビゲーション */}
+        <div className="flex bg-white rounded-2xl p-1.5 mb-4 shadow-sm border border-slate-200 shrink-0">
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all ${
+              activeTab === 'tasks' 
+                ? 'bg-indigo-50 text-indigo-700 shadow-sm' 
+                : 'text-slate-500 hover:bg-slate-50'
+            }`}
           >
-            ログアウト
+            <ListTodo className="w-5 h-5" />
+            <span>Tasks</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all ${
+              activeTab === 'chat' 
+                ? 'bg-indigo-50 text-indigo-700 shadow-sm' 
+                : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <Bot className="w-5 h-5" />
+            <span>AI Assistant</span>
           </button>
         </div>
 
-        {/* タスク作成エリア */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-gray-800">新しいタスクを追加</h2>
-          <form onSubmit={handleCreateTask} className="space-y-4">
-            <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">タイトル <span className="text-red-500">*</span></label>
-              <input
-                id="title"
-                type="text"
-                required
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                placeholder="例: 企画書を完成させる"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-900"
-              />
-            </div>
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">詳細説明</label>
-              <textarea
-                id="description"
-                value={newTaskDescription}
-                onChange={(e) => setNewTaskDescription(e.target.value)}
-                placeholder="例: 明日の15時までに提出するため、データ分析を含めてまとめる。"
-                rows={3}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-900"
-              />
-            </div>
-            <div>
-              <label htmlFor="priority" className="block text-sm font-medium text-gray-700 mb-1">優先度</label>
-              <select
-                id="priority"
-                value={newTaskPriority}
-                onChange={(e) => setNewTaskPriority(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-900"
-              >
-                <option value="high">高 (High)</option>
-                <option value="medium">中 (Medium)</option>
-                <option value="low">低 (Low)</option>
-              </select>
-            </div>
-            <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                disabled={isCreating}
-                className={`bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  isCreating ? 'opacity-70 cursor-not-allowed' : ''
-                }`}
-              >
-                {isCreating ? '作成中...' : 'タスクを作成'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* タスク一覧エリア */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-          <h2 className="text-xl font-semibold mb-4 text-gray-800">タスク一覧</h2>
+        {/* コンテンツ表示エリア */}
+        <div className="flex-1 relative overflow-hidden">
           
-          {tasks.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">タスクがありません。最初のタスクを作成しましょう！</p>
-          ) : (
-            <ul className="space-y-4">
-              {tasks.map((task) => (
-                <li key={task.id} className="border border-gray-200 p-4 rounded-md hover:bg-gray-50 transition-colors flex justify-between items-start">
-                  <div>
-                    <h3 className="font-medium text-lg text-gray-900">{task.title}</h3>
-                    {task.description && (
-                      <p className="text-gray-600 text-sm mt-1">{task.description}</p>
-                    )}
-                    <div className="flex gap-2 mt-3">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        task.priority === 'high' ? 'bg-red-100 text-red-700' :
-                        task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
-                      </span>
+          {/* ============================== */}
+          {/* タスク管理画面 */}
+          {/* ============================== */}
+          {activeTab === 'tasks' && (
+            <div className="absolute inset-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="p-5 border-b border-slate-100 bg-white shrink-0">
+                <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <Sparkles className="w-5 h-5 text-indigo-500" />
+                  My Tasks
+                </h1>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 bg-slate-50/50">
+                {isFetchingTasks ? (
+                  <div className="flex justify-center items-center h-32">
+                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                  </div>
+                ) : tasks.length === 0 ? (
+                  <div className="text-center text-slate-400 mt-10">
+                    タスクはまだありません。
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {tasks.map((task) => (
+                      <li 
+                        key={task.id} 
+                        className={`group flex items-center justify-between p-4 rounded-xl bg-white border transition-all duration-200 shadow-sm ${task.completed ? 'border-slate-200 opacity-60' : 'border-indigo-100 hover:border-indigo-300'}`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleTaskCompletion(task.id)}>
+                          <button className="text-indigo-500 transition-transform active:scale-90 shrink-0">
+                            {task.completed ? <CheckCircle2 className="w-6 h-6 text-emerald-500" /> : <Circle className="w-6 h-6 text-slate-300" />}
+                          </button>
+                          <span className={`text-base sm:text-lg transition-all break-all ${task.completed ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}`}>
+                            {task.title}
+                          </span>
+                        </div>
+                        <button 
+                          onClick={() => deleteTask(task.id)}
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2 text-slate-400 hover:text-red-500 transition-opacity shrink-0"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="p-4 bg-white border-t border-slate-100 shrink-0">
+                <form onSubmit={handleAddTask} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="新しいタスクを入力..."
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={!newTaskTitle.trim()}
+                    className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white px-4 sm:px-5 py-3 rounded-xl font-medium flex items-center gap-2 transition-colors shrink-0"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span className="hidden sm:inline">追加</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ============================== */}
+          {/* AIアシスタント画面 */}
+          {/* ============================== */}
+          {activeTab === 'chat' && (
+            <div className="absolute inset-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="p-5 border-b border-slate-100 bg-indigo-50/50 shrink-0">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <Bot className="w-5 h-5 text-indigo-600" />
+                  AI Assistant
+                </h2>
+              </div>
+
+              <div 
+                ref={chatScrollRef}
+                className="flex-1 overflow-y-auto p-5 space-y-6 bg-slate-50"
+              >
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`flex items-start gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-indigo-600 shadow-sm'}`}>
+                      {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                    </div>
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'}`}>
+                      <p className="leading-relaxed whitespace-pre-wrap text-sm sm:text-base">{msg.content}</p>
                     </div>
                   </div>
-                  
-                  {/* 削除ボタン */}
+                ))}
+                {isAiTyping && (
+                  <div className="flex items-start gap-3">
+                     <div className="w-8 h-8 rounded-full bg-white border border-slate-200 text-indigo-600 shadow-sm flex items-center justify-center flex-shrink-0 mt-1">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-none px-5 py-4 shadow-sm flex gap-1 items-center">
+                      <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-white border-t border-slate-100 shrink-0">
+                <form onSubmit={handleSendMessage} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="AIに相談する..."
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-sm sm:text-base"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    disabled={isAiTyping}
+                  />
                   <button 
-                    onClick={() => handleDeleteTask(task.id)}
-                    className="text-gray-400 hover:text-red-600 text-sm font-medium transition-colors p-2"
+                    type="submit" 
+                    disabled={!chatInput.trim() || isAiTyping}
+                    className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white p-3 px-4 rounded-xl transition-colors flex items-center justify-center shrink-0"
                   >
-                    削除
+                    <Send className="w-5 h-5" />
                   </button>
-                </li>
-              ))}
-            </ul>
+                </form>
+              </div>
+            </div>
           )}
+
         </div>
       </div>
     </div>
